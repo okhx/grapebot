@@ -1,0 +1,33 @@
+Grape - provenance and third-party notices
+
+Credits
+-------
+Grape is an independent implementation, written from scratch. It is compatible
+with Silicate (https://git.puppy.lgbt/silicate/silicate) macro and save
+formats, and credits Silicate as inspiration. No Silicate source code is
+included.
+
+Original Grape sources
+----------------------
+https://github.com/okhx/grapebot
+
+Third-party components
+----------------------
+Every third-party dependency keeps its own license. The full texts are in the
+LICENSES directory; the dependency list is in LICENSES/DEPENDENCIES.md.
+
+Notable components:
+  - Geode SDK and loader (Business Source License 1.0)
+  - Dear ImGui (MIT)
+  - stb (public domain / MIT)
+  - fmt (MIT)
+  - Glaze (MIT)
+  - Lua (MIT)
+  - Arc, Result, JSON, ordered-map, nontype_functional (Boost Software License)
+  - SafetyHook / Zydis / Dobby / TulipHook / QSox (see LICENSES)
+  - Inter, Medeo Sans and Font Awesome fonts (SIL Open Font License 1.1)
+  - FMOD (property of Firelight Technologies; not distributed here)
+
+No warranty
+-----------
+This software is provided "as is", without warranty of any kind. See LICENSE.

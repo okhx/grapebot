@@ -1,0 +1,341 @@
+Grape Lua API
+=============
+
+Scripts are Lua 5.4 and live in the Grape/scripts folder. Open Settings â†’ Open Grape Folder, drop a .lua file in scripts, then load it from the Scripts tab.
+
+Lifecycle
+---------
+
+```lua
+function on_load() end
+function on_update(dt) end
+function on_input(player, button, pressed) end
+function on_notification(title, body, id) end
+function on_draw() end
+function on_overlay() end
+function on_unload() end
+```
+
+All callbacks are optional. on_update runs once per rendered game frame. on_input runs on every click/release before the game handles it; player is 1 or 2 and button is jump (1), left (2), or right (3). on_notification runs once for every notification raised anywhere â€” by this script, by another one, by Grape itself, or pushed from the server â€” which is what makes it useful for reacting to an announcement rather than only for confirming your own. on_draw renders inside the Scripts tab. on_overlay renders over the level and shaders but under the Grape menu. An error or instruction-limit violation stops that script and shows the error in the menu.
+
+Game API
+--------
+
+```lua
+grape.log(message)
+grape.notify(title[, body][, options]) -> id
+grape.frame() -> integer
+grape.in_level() -> boolean
+grape.tps([value]) -> number
+grape.speed([value]) -> number
+grape.input(player, button, pressed)
+grape.player_get(player, field) -> value
+grape.player_set(player, field, value)
+grape.trajectory(player, action, delay, frames) -> prediction
+```
+
+player is 1 or 2. button is 1 (jump), 2 (left), or 3 (right). Supported readable player fields: x, y, rotation, y_velocity, x_velocity, gravity, scale, opacity, visible, dead, holding, upside_down, going_left, cube, ship, ufo, ball, wave, robot, spider, swing and platformer. Writable fields: x, y, rotation, y_velocity, x_velocity, gravity, scale, opacity and visible.
+
+Notifications
+-------------
+
+```lua
+grape.notify(title[, body][, options]) -> id
+grape.notify.show(title[, body][, options]) -> id
+grape.notify.update(id[, title][, body]) -> boolean
+grape.notify.color(id, r, g, b[, a]) -> boolean
+grape.notify.dismiss(id) -> boolean
+grape.notify.clear()
+```
+
+Raises the toast that slides in from the bottom-right of the screen, in the menu's own surface, border and corner radius, with a coloured rule down its left edge. options is { color = {r,g,b[,a]}, seconds = n }; colours are 0-1 and seconds is 2-600. Leave color out and the rule takes the player's own menu accent, which is usually what you want â€” a notification is rarely important enough to override someone's theme. An alpha of zero means the same thing, so you can hand a toast back to the accent after setting a colour.
+
+The id is what makes the rest of the table useful: update and color edit a toast that is already on screen instead of raising a second one, which is how a progress or status toast is built. Four toasts are shown at once and older ones slide out early rather than queueing. grape.notify stays callable as a plain function, so scripts written against the old single-argument form keep working.
+
+```lua
+local toast
+
+function on_draw()
+  if grape.ui.button("Start") then
+    toast = grape.notify("Converting", "Startingâ€¦", { seconds = 60 })
+  end
+end
+
+function on_update(dt)
+  if toast and working then
+    grape.notify.update(toast, nil, math.floor(percent) .. "% done")
+    grape.notify.color(toast, 1 - percent / 100, percent / 100, 0.2, 1)
+  end
+end
+
+function on_notification(title, body, id)
+  grape.log("saw #" .. id .. ": " .. title)
+end
+```
+
+Audio
+-----
+
+```lua
+grape.audio.play(file[, options]) -> handle | nil
+grape.audio.play_sfx(name[, options]) -> handle | nil
+grape.audio.stop(handle) -> boolean
+grape.audio.stop_all()
+grape.audio.volume(handle[, value]) -> number
+grape.audio.pitch(handle[, value]) -> number
+grape.audio.position(handle[, seconds]) -> number
+grape.audio.length(handle) -> number
+grape.audio.paused(handle[, value]) -> boolean
+grape.audio.playing(handle) -> boolean
+```
+
+play reads .mp3, .ogg, .wav and .flac from the scripts/sounds folder; play_sfx plays one of Geometry Dash's own effects by file name, resolved through the game's own search paths so a texture pack that replaces a sound is honoured. Both take plain file names â€” no folders, no .., no drive letters â€” and return a handle, or nil when the file is not there.
+
+options is { volume = 0..1, pitch = 0.01..10, start = seconds, loop = false }. Everything is applied before the first sample is heard, so a sound meant to be quiet does not crack at full volume first. Files over a megabyte are streamed rather than decoded into memory; that choice is made from the size rather than asked of the script.
+
+A script may have 32 sounds going at once. Finished sounds are released for you, a script can only touch handles it started, and unloading or reloading a script stops everything it was playing.
+
+```lua
+local music
+
+function on_draw()
+  if grape.ui.button("Play") then
+    music = grape.audio.play("track.mp3", { volume = 0.5, loop = true })
+  end
+  if music and grape.audio.playing(music) then
+    grape.ui.text(string.format("%.1fs / %.1fs",
+      grape.audio.position(music), grape.audio.length(music)))
+  end
+end
+```
+
+3D models
+---------
+
+```lua
+grape.model.draw(file, options)
+grape.model.info(file) -> table | nil, error
+grape.model.unload(file) -> boolean
+
+-- info = { triangles, vertices, unit, min, max, clipped,
+--          materials, parts, images, textures,
+--          has_colors, has_uvs, base_color }
+```
+
+Loads a .glb or .gltf from the scripts/models folder and draws it into the level from on_overlay. Triangle geometry and the colour on it are read: the scene graph and its node transforms, positions, normals, vertex colours, texture coordinates, base-colour factors and base-colour textures, and indices in any width. The rest of the PBR model â€” metallic-roughness, normal, occlusion and emissive maps â€” along with skins, morph targets, animation and the compression extensions, is not: the draw is a flat-shaded triangle list with no lighting model to feed those into. Buffers and images may be packed into the container, inline as base64, or beside the model on disk.
+
+options is { x, y, size, rotation = {rx,ry,rz}, color = {r,g,b,a}, textured, distance, wireframe, shade, cull, light = {x,y,z}, width }. x and y are the level coordinates the model is anchored at and size is how many level units its longest axis spans â€” every model is normalised into a unit cube when it loads, so size means the same thing whatever units it was exported in. rotation is radians. distance is the camera distance in model widths; 0 gives an orthographic projection.
+
+textured is on by default and draws the model in its own colours: base-colour factors, vertex colours and base-colour textures, multiplied together the way glTF defines them, with color acting as a tint over the top â€” so white leaves a model exactly as it was exported. Turn textured off to get a flat model in color alone, which is what a silhouette or a marker wants. Materials in MASK mode are cut out rather than drawn transparent, so cut-out foliage and decals read correctly instead of as grey rectangles.
+
+Colours come out of the file in the space it stores them in: glTF states base-colour factors and vertex colours as linear, and they are converted to sRGB once when the model loads. That conversion is not a nicety â€” an ordinary dark material handed over as linear arrives looking black. Textures are left alone, since a PNG is already sRGB. A material whose texture has no coordinates to map it onto falls back to its base colour rather than sampling one texel over the whole model.
+
+info reports what the file actually turned out to contain â€” materials, parts, images, how many resolved to a texture, whether it has vertex colours and texture coordinates, and the first material's base colour. A model that draws in the wrong colour is nearly always one carrying less than it looks like it should, and that is the line that says which.
+
+Models are projected onto the level's own coordinates and then through world_to_screen, which is what makes one behave like part of the level rather than a sticker on the window: it moves, scales and rotates with the camera, and a model anchored to an object stays on it through a zoom trigger. Triangles are drawn furthest-first, because a draw list has no depth buffer. Up to 8000 triangles are drawn per call; info reports clipped = true when a model is larger than that.
+
+```lua
+function on_overlay()
+  if not grape.in_level() then return end
+  local x = grape.player_get(1, "x")
+  local y = grape.player_get(1, "y")
+  grape.model.draw("ship.glb", {
+    x = x, y = y + 120, size = 70,
+    rotation = { 0.5, grape.frame() / 240, 0 },
+    color = { 0.62, 0.36, 0.88, 0.92 },
+  })
+end
+```
+
+Trajectory probes
+-----------------
+
+```lua
+local p = grape.trajectory(1, "click", 3, 90)
+-- p = { x, y, frames, min_y, max_y, survived }
+```
+
+trajectory simulates the selected player for frames physics ticks and flips jump input after delay ticks. action is click or release, 0 <= delay < frames <= 600. survived is true when the player reaches the full horizon. Call probes from on_update and cache their result for drawing; each call runs real Grape trajectory physics.
+
+Use Grape menu controls
+-----------------------
+
+```lua
+grape.menu.list() -> { tags... }
+grape.menu.register(name, default) -> tag
+grape.menu.get(tag) -> boolean | number | string
+grape.menu.set(tag, value)
+grape.menu.toggle(tag) -> boolean
+grape.menu.press(tag)
+grape.menu.mode(["stopped" | "recording" | "playing"]) -> string
+```
+
+register publishes a boolean of your own into the same registry, under script.<script name>.<name>, and returns the tag. That tag is the point: a control in the registry can be bound to a key, which is the only way to turn something in a script on and off without opening the menu â€” and opening the menu mid-attempt is exactly what you cannot do. Re-registering the same name after a reload finds the existing control again, keeping its key binding and its value.
+
+This is the same shared control registry used by Grape's menu and keybinds, not a copied Lua settings list. list returns every available tag in the current build. get/set works with every registered boolean, number, and string control; set runs the control's normal change handler. toggle changes a checkbox. press activates one-shot boolean controls such as updater.advance_one or updater.advance_back. mode reads or changes the recorder/playback buttons.
+
+```lua
+for _, tag in ipairs(grape.menu.list()) do grape.log(tag) end
+grape.menu.set("updater.tps", 360)
+grape.menu.toggle("hitboxes.enabled")
+grape.menu.press("updater.advance_one")
+grape.menu.mode("recording")
+```
+
+Script-tab UI
+-------------
+
+```lua
+grape.ui.text(text)
+grape.ui.button(label) -> boolean
+grape.ui.checkbox(label, value) -> boolean
+grape.ui.slider(label, value, min, max) -> number
+grape.ui.input(label, value) -> number
+grape.ui.same_line()
+grape.ui.separator()
+grape.ui.image(file, width, height)
+grape.ui.corner_image(file, corner, width, height, padding)
+```
+
+Images are relative to the scripts folder. Put shared files in scripts/resources. PNG, JPEG and animated GIF are decoded once and cached. corner is top_left, top_right, bottom_left or bottom_right; corner_image must be called from on_overlay. Keep labels unique by adding ##id when two controls show the same text.
+
+Level drawing
+-------------
+
+```lua
+grape.level.world_to_screen(x, y) -> screen_x, screen_y, visible, scale
+grape.level.screen_to_world(screen_x, screen_y) -> x, y
+grape.level.to_screen({x1,y1,...}) -> {sx1,sy1,...}
+grape.level.camera() -> { x, y, width, height, zoom, rotation }
+grape.level.line(x1, y1, x2, y2, r, g, b[, a, width])
+grape.level.polyline({x1,y1,x2,y2,...}, r,g,b[,a,closed,width])
+grape.level.polygon({x1,y1,x2,y2,...}, r,g,b[,a,filled,width])
+grape.level.rect(x1,y1,x2,y2,r,g,b[,a,filled,width])
+grape.level.circle(x,y,radius,r,g,b[,a,filled,width,segments])
+grape.level.text(x,y,text,size,r,g,b[,a,centered])
+grape.level.image(file,x,y,width,height[,alpha])
+```
+
+world_to_screen also returns scale: how many screen pixels one level unit is worth at that point, which is what lets a script drawing in screen space size things to the level instead of being wrong the moment the camera zooms. screen_to_world is its inverse, through the same transform. to_screen converts a whole shape in one call, which matters because converting a hundred points one at a time costs a hundred Lua calls a frame. camera reports the visible region in level units and is derived from the same transform, so it stays right through zoom triggers, camera rotation and static-camera sections. These four are queries rather than drawing, so unlike the rest of this table they can be called from on_update as well as on_overlay.
+
+All coordinates, sizes, and widths are level/world units and follow the complete camera transform. Colors and alpha are 0-1. Call drawing functions from on_overlay. Polygons are convex; combine multiple polygons for concave shapes. Images support PNG, JPEG, and animated GIF files relative to the script. These primitives can compose arbitrary level overlays rather than only circles.
+
+```lua
+function on_overlay()
+  if not grape.in_level() then return end
+  grape.level.line(100, 100, 220, 160, 1, 0.3, 0.2, 1, 2)
+  grape.level.polygon({240,100, 290,170, 340,100}, 0.3,0.8,1,0.7,true)
+  grape.level.rect(360,100,430,160, 1,1,0,1,false,2)
+  grape.level.circle(480,130,30, 0.7,0.2,1,0.8,false,3)
+  grape.level.text(540,130,"Lua",18, 1,1,1,1,true)
+  grape.level.image("resources/marker.png",600,100,64,64,0.9)
+end
+```
+
+Reading the loaded macro
+------------------------
+
+```lua
+grape.macro.length() -> integer
+grape.macro.position() -> integer
+grape.macro.tps([frame]) -> number
+grape.macro.platformer() -> boolean
+grape.macro.seed() -> number
+grape.macro.name() -> string
+grape.macro.event(index) -> table | nil
+```
+
+The recording itself, which nothing else in the API exposes. event is one-based and returns { frame, type, holding, player2, swift }, plus tps on a rate switch. type is jump, left, right, restart, restart_full, death, tps or bugpoint. tps() with no argument is the rate the macro starts at; with a frame it is the rate in effect there, after any switches recorded before it. position is how far playback has advanced.
+
+Read-only on purpose. Handing a script a mutable event list means one bad index can corrupt a recording; editing stays in the macro editor, which keeps the list sorted.
+
+```lua
+function on_draw()
+  local total = grape.macro.length()
+  grape.ui.text(grape.macro.name() .. ": " .. total .. " inputs")
+  grape.ui.text("At " .. grape.macro.tps() .. " TPS" ..
+    (grape.macro.platformer() and ", platformer" or ""))
+
+  local switches = 0
+  for i = 1, total do
+    if grape.macro.event(i).type == "tps" then switches = switches + 1 end
+  end
+  grape.ui.text(switches .. " rate switches")
+end
+```
+
+Persistent settings
+-------------------
+
+```lua
+grape.storage.get(key, default) -> value
+grape.storage.set(key, value)
+```
+
+Boolean, number and string settings are saved per script in scripts/settings. Writes are grouped briefly while a slider is moving and restored on the next load.
+
+Frame-window circle example
+---------------------------
+
+```lua
+local marker = nil
+local color = { 0.2, 1.0, 0.25 }
+local tested_delays = 10
+local horizon = 90
+
+function on_update(dt)
+  marker = nil
+  if not grape.in_level() or grape.player_get(1, "dead") then return end
+
+  local action = grape.player_get(1, "holding") and "release" or "click"
+  local available = 0
+  for delay = 0, tested_delays - 1 do
+    if grape.trajectory(1, action, delay, horizon).survived then
+      available = available + 1
+    end
+  end
+  marker = {
+    x = grape.player_get(1, "x"),
+    y = grape.player_get(1, "y") + 35,
+    available = available
+  }
+end
+
+function on_draw()
+  color[1] = grape.ui.slider("Circle red", color[1], 0, 1)
+  color[2] = grape.ui.slider("Circle green", color[2], 0, 1)
+  color[3] = grape.ui.slider("Circle blue", color[3], 0, 1)
+end
+
+function on_overlay()
+  if not marker then return end
+  local strength = marker.available / tested_delays
+  grape.level.circle(marker.x, marker.y, 5 + marker.available,
+    color[1] * (1 - strength), color[2] * strength, color[3], 0.85)
+end
+```
+
+Security and limits
+-------------------
+
+Scripts run on the game thread with an instruction budget. File, operating-system, package-loading and debug libraries are disabled. A script can still change gameplay state and crash a level through invalid values, so only load scripts you trust. JavaScript is not a second runtime: one Lua API keeps bindings, lifecycle behavior and security rules consistent.
+VINE     í½      n@ÀÏ$÷˜Æ ‚¦®Ó;M j8Zf4’AÑÌTF¤4R1,a‡ LaâT4B8–Á@‚x€,/4p$]Ñ–XrÙô<óH]„HÆğÿ F4k†«La'Û\Oş˜nÎußt:X‘N‡¦T'ñ’ßÌäb¾ÄŸ±\ËM>µµê6ŒR(§q@a³(ŠÂPKÒIE7‰@	£lÊ&]‰#hV,OD(DĞ9È4‚ä<K±×ñ—ƒ ¢ K!)¡%D ]EÁ*….ƒR"C³ ÕA1NP‡S§§:„läècCª±ë=ª!
+níQ’…¶gDpñN€ŒqC\ŞuLUXq4^s\Ï£ O×`Ã#„`Ç°dD1!§Q ×B4Ó-ÆUHSÄ4œF*b8·ƒæ›1b(Dc…@ÁËÒ‘'
+!6¡$Z2<rqP
+s)±!ËCY	äqèòeûğ+1ò;U¡;ò/¿ò+1üñ1²¢)?“ò??Ó1/¿’ñO1ßòO)4qñOÿó!ï%3s#ŞñS3òC¥ò2¿R"B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B*¬Û¼b¾†d¹Ø"ÿ6±çÉ±Ş~î-æ¹}nèLW0©úHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA îfS5ë-ÆJ¶LJADR4‰ÆÎò;Ñ—ÙYi§‘h« -ñV|Şä´iíµ<$‡I”´°*:òLˆ­ôUn2H—@¯†äƒ2òn4¬7áClí’Ùæœë¥™”òØ—nH™-¢á<YÅ¾İi¾èü’"_m‹CØ¾ÒrJ…11111111111111111111111111111111111111’òGxñK×qRÒ #óS%äòk1¯a¶ñ;5#-,ò#!ØñO)İ +?PÂ™"#¿ò+-úğc™‚ÿğ/1Yòvòg1Ñ’"£Á¿Vò3#|òW)&ñW“¡!ñ¿ó-ÿÓòRò%&ñ?ÿÓâ?Vñgÿ‘¡3¨k^‘é&"Öjl‹Dé9å¿6±cq)¿Uò82ÿ1-ÛÁ!ò[)Rò%äñ#%Xq)¿Tñc-ğÁrò'˜A\ÁaB/Ôğ)ÿ”²ÄŠ™*rË‚R_hŠ¬
+Óß>vm©“À²‡šÆ7lñêÄ"½et=Û#Í²¡ÔFe0©®ŞÏR Sá`şÜ‹‚ÀòÄ,KR#ëN‹ãFy1ÓBiÊ"m§ƒÖÓA¡ÒÖUÕLV/*k\deÏ(«ÔêR_v)Ou¾cf]Õ™èÔ¦Ì½N•µÆùFã¢Å¥Œ&­x´ÔÕª	Ö0×ñ&a[%qa„F c1A+àS‘2„F^Ã¥dƒ%Ô’(uNAU8ô‰`iÀ%œ6ÍE(Øp8™…8ƒU]‹Txa4×2$Fa8ÊQ(±<JS%„e0€´B/Á&ä!Àµ,)3)` –pÂB>
+óE£O’Íb%ˆBIŠÁ M4=ÂÆ-Â—%)†ÓÙ@ñ"KÑ’XŒÑZ‚Æ0Ê”TRZr Â(PuTÁ¶&”M–EÁ'ÿ“4²'¨¡(2&ùğg£²eñ¿ñK-aq?óS!ò'-¿Ğ@+s¨R-qR­R&ÿóc-¿Õ!ÏĞ"ñ,óÿ¿ó7-ùòg1¨ò-0ó%Ñ’'¿”ñ#?Ò *“.¿Tò_nAÓq#ò% ç¢ıqq%à2ñâ#?Vñ§bó(c²+Ø’¿•ñkÿÓ"&Òr'÷ñ'R‘/Ò39â?Ô’'ÿQ#U2|ñ/ *pB2„0‚ C@C0D0‚0‚0ƒ@„@‚0C0„ „@D0‚ „0B ‚0„@„ D C@‚0‚0„@„0C@ƒ0C C0B@AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAÑM$U˜Æè®Ôk¡D^^c–ìå|G~8 x’DØtÿP¡.$ñ#÷±3ó1üğ?)òK¿s+?ÿO‘fòOa*?“'ÿ“34òK91¿Ó¿óóc¿Ôá?Vb"ÿ“’%nñ3-¢2ÿòK*X‚#²&ÿ‘çñ!‘ñ'>!ó+ñ-Ú '?’²?ñ'â8ñkÒ #?V"ôğ%_af("ÿ£#ÙÒ/Ø02óO!§òk%òÿÓ¢?Ğ ÿğK—Ñßq)¿Ör3OÁ¼1 ó[-¹1ÿPñOÓòÿC2ÜÁƒ ƒ0 A C0 ‚ƒ ‚ CB0ƒ0‚ C0A 0‚0 B ƒ‚ ‚ƒ  ƒƒ B00BA`vÃ%EÙ«$ù½eBl*Â¢ª x^àgÅÕ”=#sT—³—Mì†=q.û½#TÕ!5xŞº"çÙ™$W•á—Òºµd„>|¦ÉÊÈEë±&>q3ÿÔğ+)'‘ê-¢?ğS~ñ[¿’#ÿÕÂ1Ù?a&ÿÓñgÿÒQ#çñOÿQñ/-ñ%VBÏ2õRÿQÂëğ1?Ò`+õB/á!¸ñ/1àÑ½’fQW!=4@…Ã,š7W!†`5Â\ÉñP²=!$MÑ@ÔE9PÂY‚DcYÅÕYÏ¢fCW>ÿĞ"ÿÕò7?P±#Û‚¡‘¿UñC!¿ÃĞP¥ĞtàÄJnâê±’ôB^”ß †„§Ó6F½%ØLºË˜¶ÊÆ®ªÅ^ƒî‚Rx,S#zÿíXdˆg…Ôhî†ÖMÆÑ—Æ*Uõk%š±?Ò?–!6ğ!%ó1Wòc1‘R’Ú!1(ñ[!+ò¦'ÿñW!¸‘ÒâyâbhùîH8Ô1BXÉ°‹	aQêáªÇÊJ¹°¥Á0†ËEZóˆØáSLâ®´©e²e
+3& ìT1g×¼`‰GÚ	Êü¼œŠ¯›n'3X7˜æ~ğ¨ê]Û^S„H†ÉDKQÍƒŒcÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁğ'wq28“'?ÒğO­òC1şa?•rÿP;ò ?Ö +Ü¢+¿’"!?ò-T’2ÿ“*Ô°?Óğ?!¿ó)ó+ò{âğ'9c.ÿB9ñ73#'ª"#¯<ºÄGfígà«ÜŠ«*Şvéé-­LqåN°¥¾HL±cÍ¦‘¡Îu°];p¦{ÂyPLm¿2Xñ%?ğ3)¿Óá2½ñ#-!&øğ&W°Ús"M—\O!]„ßã(Åğ9Ì!=‰ò4aAÃ=ÆUÃcN“–4h³d\€!3hM)Ã4@ÇBYHÌ$L!'bºb'ñ[1¿Ó03¿ÒB!eÂ1”qæ°§ÏÆ!Hñ–Ğçİ-gDcs>UşÔŸÔĞ²‚3‘qw‡gfRÈm¡.aÍ-&ç¢R}GúWÔòc12Ó?Ã!¦á%×R2i/S?ò[%¿–r¡#ñ%añ#_ò3¤1çÒ2ÿÒñÿ0Öñ[-ûğø2øğK?ò+1?Ç¬R[kúf®¶’`‡LY–¥dZF ½åvâ_ÔÈé¡åŞvY&¾`ú-é´ñyÕ™kß¦e¬æ´„ù/cúñ[1?–òC¬â5ó% .şñW1V?Ó!&ÿ’ñO1ÿó)ÿ“A/¥òkíò?!Úğ3-)ò!¿Öñk%U!!ç1ı`ô¢*5²1o1,²"¿ÖñS)3#ÿÂ)ÿs*?/ÿóW%ÿñ!!±¿Ó1HÃá«¯)©nÜ„—¸Ñ§Œ%‘Ş«YZM}U¬5i„ËëìØxWq=XL@›K©?>G6­QŸ¨:aÖ!²¸Š¦Uò]!øğ1{ò?ĞñÁ,²&Ñ&S!>m'wÎ:,_5š`vr‡x¤Ê>ÒE¤CÈt‚ÕkTâÃ@c”]÷%pHÄ@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@ªÎRœÑù~aÒìÖ^QN„Üå:+¦–~X‘q~gü‚ÒXIÅXrØ«+Æ+yîÄ]-G$¨şùá3QQ!Pq,ñ"Ñ-?”ò'?PòOb&¿Ğòc1¿ò%gñ_¿‘)ÿ“òk1ÕÁ-¿Ò·ñg-ó}Aeòï€?”1ÿSò7!â¨ò)¿Ó%"\*ßuUXg}bBÌcÕ\Í#ÇëÊÑ›(FÕTB¦çëYZç4x~,]È¡ä©†ÕöÁÖé¾Ÿnx$«bÙ^QşR!Õ‘$+…%ŸÎmawZÖNÇ—YZD‚GîĞ•hÊŒ‹ ‰ šlŠ78 ;}ÖI:™şVoSÊZ)á-*†Ÿ«A'¿aAaFAAEQFADAaFQaAFañK!æñ+7Â¿q!r³ò3ÿTòS¶ò'%’ò#?Ó%Z²-?’ò?*£ş"êa1°ÂñbòC!õòk?áÙğcñğ[!ÙÀ!ïğ!¶Ñ*Ü¢ÿÕâ,Å@1Ä@1Å0ÄPÄ0QQÄPQÅ@1ÃPÃ@Q1QAÃ@Ä@QÄP1Å01QQÄP1Ä0AQ1QÅPÄP11AÃ@Å0A1Å@ÄPÃ0AAÃPAAÅPÅP111AÃ@Ä01QQAÅ0Å@æÑ ³'ÿ”ò –ñC©ò/)¹¡#ò#ĞXñ3Ÿ¢-ÿ”q%Zòÿñ?“ò3—!/–QâbÿB.e±"qñ/¿Òò[¥ò)ÿò??Ñ)?Õ!Ô@¡ƒÊÓÇÌ¤õyßÁ¸3²L]*¥¦T‡eÃ¡|ÕíÑäÚ¶é•œCòNş4Ò3dùYp•æb$óPÃšÕ'Ï¿Ô1"Wß@+?`U‘¤Œ
+:eF1ŞÔ@.l„¥ÑÍCeNq	=éÃ!-9“"YSø –z`$«ÇÓæÜ^¤•(íYh…ÌÄnÉœÅúx°W§QÉi$Ú*Ñ.]â¦Æpg:â-!!!!!!!!!!!!!!!!!!!!!!!!!Ã@Â@Â 11Ä A1Â Â !A1Ã01Ã@Ä Ã@Ä0Ã@!Ã Ã0Ä0!!1Ã@Â Ã A1QCQCQQAQEQQEQEQQAQ1EAQC1QADQDA1AEQ1DQCQAEAAAQCQQQCQ1D1QC1AQQCAADACQDQEQDQ11C1DAAEQDQE1EQQEQQCQDQAEQC11AAEACAD1CQ1EQ1AAAEQQD11Dáê7kŠ~¥ò¹lŒÁ Ô2%‚?PB$à&áÀs¡"ãÚ #÷á?ÒòWóóSc‘+a#ÿQ)¹ò;Øñ&­ò;%Â$‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ¿Ò2.UñW;ò)Ó‘#¿Õq¦òG)"xò-Õ!Ğñ;?ÓòG—òÕ°+•ò-,Á5ƒñ4]a$p8‹£I„@’1!FÁx„f“lZlA »¡õS [RÄ@Æ@Å`AÆPÄPAaQAQÅ@Å@Ä`QÆ`QQAÅPaaÄ@ÅPÅ@QaAQAaAaQaAÄ`ÅPÄPÄ@ÆPÄPaÅ`Ä@ÅPAÆ@Å`aAÄ@AaÄ@AÅ@Æ`Å@aÆ`AÆPÆPÄ@QÅPaaÆPÅPaQÆPAQÅ@AÆ`ÆPQQAAQÅPaDS&W’œ(YO‹é†ÛğJµIƒ)¿Õ@"ØğC%ûÁ.Ròc)ıb?PñC¿Ñ2£/ëğWîò_%¿“‚Õ "ñ[%§¢0ÒEÑ²‘@r 4ÜÕÖ)T–E7$ˆt
+‰4(„CKŠB*×Ó@‘£(ïû}%ŸAíD±*Soj°Hå‚êŞ2ÁíeF\ŠØhGÄ;NG\RíìL‹Vı€R‡Å†­záÃ©Á„‘š)×ñWfá=ó`Aƒ „ D0„0B@„0C0B@ƒ ‚ D ƒ0ƒ0C „ C@ƒ D „@D D „0D0‚0ƒ@‚0‚ „@‚ „@‚@D0„ C0„0C@„@ƒ0D C0D@B „ C0ƒ0„@B B0C0C@„ ‚ ‚ „0„0B „ D „ ƒ0B0ƒ D „°#;³ÚñG-•ñ’ñG?Ö‚&òW!À/ÿaÃPQÅ0QÄ@Ä0ÄPÅPQÅPÄ0ÃPQQÄ@AÃP1Ã01Ã@QA1Ã0AAÄ@Ã0QÅ0QÄ0QÅ@1Ã01AÃ0Q1AAAÃPÄPQÃ0ˆû?Tòcaq<A1ü¡?Q+^?±-Ùğa%ÿ•‚&–QCQ1DA1D11QQ1QCAQ1EQA1C1QQC1C1AQQDQCAQ1AEAQAQQQEQEAQEAQEQDQAC1QQCAEQD1‰î^VdèŒx˜â‹yX&ş¡Y5T!UmXQ4hëQJ^A0Öº?”ò!?‘rƒ?óc1'²ñG`‘*/ò4cáç¼/¦…Æ›.Æ9	Î^ñÂ³Âi(Ù‘DòT&ßâq¼Eb[Qäe–Dk0äYîÊ”Zm.óÂë¸”‘­”„@…PE@…0DPƒ0E0„@…@C0„0…0ƒ0ƒP…@BCBA11B1A1!11BA11A111!A1B1A!C1!C11B1!C!1!B!A1CBB1B!A!C!1B!1A11A1AÿSQ.9"%ğ (óæñC÷€-Ñò¿Õ²PÂ%á!ò“ñ7ñ'¤á1¿ó+!æñc1?Ôqñ)l[¢ğ?-9r¿òÿQq%“ÑñW1UQ"òc?•2#lò!–2-,°.ÿ&ë‘'2ó+,Ñü¢)é ':ó)¤’ñ#1ÖÿÏğ1?Ò‘+jò·ñg!¹ñ_<òGôB?T22?ÔğC‰×š¹‰aá4ÍÕ Q´ğy&>PÍÂè.¨ÄÎŞ,¢òGûJâ!Š-+`.‹ÛÆ_‚@ˆëY7Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0Ã0ÚšîP§]6<ÓÍj¸iùmM„ë.YŠ('§M?,Ğˆ<“§—½6ŠäMéu]E@¼ñ<ÕUò!ë,p.ÿÓñO-òğ!œñG-)R):ğW)ÿ•ñ7!¿Ñ„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„ğ,¡2qrÿÑQ-$ñG£#İ¢2ÿÒ`"Q.ÿ•11Ô"“3’"+â1'“1?ğW-ÿP‘šò?-ÿÒñ¯‘Ñò;1“’ÿPòWpñ[[RÕ-B¾ãæ‰Íå0Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@‚0B AA0ƒ C ƒƒB0ƒ0‚A0‚ƒ ƒ ƒA CC0ƒA  C ‚A A0A0ƒ  CAƒA ƒ0A  CC0ƒ0CCƒA0C A ƒ ƒB0C AEQ111DQE111C1Q1QQDA1DAEAADAC1D1QQ111CQCQ1EQQ1E1EQDADADACQQC1E1DADQEQEA1DQEQC1D1CA×ÿçÙ+¾ÓÃm Bîó¶ÓÄH§•z¤¹İG¿’b#³ÁÓğk ±4¡İN ræÇmß÷B
+næärĞG$!1²%!ö²YZfæ¼jÄ­˜Zšä
+"0$[²HÌMJ‹M°TæP/Œ°Ê3ˆî,ïà]6®N)Yñ²MaŞdYÜ¤c<ëXÅ0…0ƒ@…@Ä@ƒPƒP„Pƒ@ÄPÅ@…PÅPÄ@W9j§ä˜áay¹Û2øò!A!Ú`cÁiB2?Òğ/);ógtb1ªñ7)?•R3“òC)ÿÓÂ+ŸR!ò+%òC) ñ?-Ÿ"%Á-¼ñ/?ĞâÙºMõ1JÈNÚTÌÖLèÄ%mçGÅŠÎÕ^šXV6ğ-¢ ‹roé[Ùf¹2æó©È÷~^Jnå§éò±è]«½§H.
+IáÄ•©š˜ıäÓ+a°×Îœ5:#¬ºÚÕ–h8ÔæLÚÊ®_n…qK(®^”D!DWp0zĞDÇ#0N‘
+ÓÀC$_0cÁ$shÜÃ$ŠtÀ0ÆR8±4RTÔáPİ )çEÚ¦`†õH³M‘‡ACBuV€òlµp‹AZÀ”*Ç>McI
+Òò²'Á2á*LÁ@Råk“…Ä±ñ<_Tr2`×l˜f¨ÛV…+}ÈâÆ”j™Ù–|-hÅğñ"i¨Ò
+#ë1FäÎTno¢™²'ÙŸQZFÅÔo^ØÍeADÆ‰ÔÔgKyeZ(n\¤Óë¦ÿĞbD$`¥`“Ñ —C(AUŠEÒ¶VÒpÂÁJ‘8iÄ„]Ã”QCXS1’q`>LôV EH„&	¡8DáIÃã8ğÿPÒ:”PÃÒ0J²(’bKc,U5RôPŸTqÍ€åÓ4b0r9Râ"å‚¿óiÁ"ë?ñ+ñ/<²Şpó¿“ğğ1İqÿòà@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„Ğ—Q/hñk)ÿƒ#?T²¿‘¿Ğò6@.?Öò7%Ù7X!.¿Óñ?%àÒ'Ù'òO%¿‘!/ƒ‚0ƒ Ã ÂÁÃÂ00Â ‚ 0Á0Â ‚Â0Âƒ0ÂÃ0Á ƒ0ƒ ‚ Ãƒ ‚ Ã Â0Á Â‚ Ã ƒ0Ã0Â0ƒƒÃ0Ã ‚ƒ ÃÁ ƒ ƒÃ0Á0ƒÃ0ÃÂ0Â‚ ÃÁ0‚0ƒ0Â0‚Â ‚0Á Â00 ‚0ƒ ‚ Áƒ`FP…`„`D@EP†PDPF`DP…@†@†`DPF@…PE@F`„@E`FPE@…`D@F@†@†PE@„P…@D`„`EPD@†@E@…@FP†P†@D`FPDPFP„PD`D@FP„P†PE`DP…PEPF`†`E@…@…PDP„`F@„`†@E`†PFP†@…@‚ ÃƒÃ0‚Â Á ÃÁ0Á Â Áƒ0ƒ ‚ Ã ‚Â Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä Â Â Â Â Â Â Â Â Â Â Â Â Â Â Â Â ÂÀœ¢,¥'|píÓbˆğDÍÜœìàxQb™²<B±!ÌH(q4Ÿ°«"!ãÄÄLF×<Ä‡Át›@L…bS±0°/-æšÁÇË”*‘£*
+æIƒÔ<Î0]LÔ	ÊB:„ñ)Æåd(ôÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁÁ°9B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B ï†j2"YQ¡ƒIyğÙ†,bšÓäq5ÂHö½Ši´R’kUÈQèÎ^ˆ¢a&Ì 'µº0dØü’±îD”§&^íË²=I¦º°beH>aÊ.İºYT&ïƒğçYÅFŸiZ±Ô†ØÕ*x8şpD}Swn[†X®‹Ä„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@?q7òC%ó7-¤1>òÿQ"ÙòK1&ğW#?ĞP?S)ñ3ÿÓÑ.âà+ãÀ)kò;÷ğO1š18òçP)³±2‘òÿ(è‘ØñW%òâ3¿–q)§Ñ¿Q?ñ/“#•G¾TË&qfäîÔFÏI#¸h1Éè£ÃyXfM‘ÔÙd#›¦;„D˜vòñ…c#›ìK¬2ĞÕjñ3!q!!ôÒ)¿•"âò+%}¢)¤ñ¿1#Q·Á¿“%˜‘.òpó')Z)R‚?’ñÿöríòSPñ12ò;)¿ã¿q¿Tâ!'ògÂAwß)9B–ã$´DÆA*˜áÍPPq	É( ¶aÂƒMK EÍq‰ƒ:J1yB‹AÕ9Çr1Á•	1!Ëi™aÃI€Ï³ Š4 F<C£dsÏĞD“ö0H¢#Â1U’ewÅ2-Â Ã Ã0Á 1Â Á!!Ã Ã Á Á1ÁÂ Ã0!!1ÂÃ Â@Hh¼]CÖ%
+ÛËÁXÌ/12H¢‡Å•$ƒ,¢¤w•ó kcPİ¦É¤âdLãU‹X¢ÄæÆîğQ<]wÒfÓ±/ãr¾2"QÿÔ+¿òS)½b"Ö‚Ã£êğ#Àç@-¨‚+şòì2»â¿’ñ/%3ƒPÙi†µ…”!LL²=rDBR^Å"6F¢É±$pq(2C<İ²ÏE(¡CYYÁŠ± —08˜dhb n2$rTI¥Jöÿ8]'¦«ÉÑsj}îçtà+¦(i0Yƒ¶@-ç&,i.‘íÔH'ájÖÊMUdé!Üh@—š–TBÑãÍòˆ­Î…A^šWAŞV"®Şé²dX—JÄ¤*×Fitm]ÜÊ„Ü1RõqßYIU¤L6U}‰`)±0•™G¨œØœ“”i‹›Ú~ØàjD™$²Õm¹ÛRVñ1€CèV''b ÂŞAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAñ31ñ?–q"¼$ò¡q-?Ôò31“b?Õ '¨ò#-Ñ¡Úr?”r%ò7"ÿÂ-İñ?Ò@1ÿ‘òN•”1 Ã1ŒòÏ!Qàâ,ç`Œs.TƒDtÉ ,D=Ìu B.†£eLÀÍ±Eñ0APƒáÒ i!üã2$#?Ö '0RVò?Ôá#Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@*qGqqàúĞÈŠ8™=ÊŞåJí¢%ùòW­òc!2¢2ìrP¢2YQ-Ã!©–ò_%á/‘A%sÑ/ÿó-e’Ú•ûtÒëY©n¾§0¦¾lĞ„HÄ¥N¹ÂfÕDO5neY^eÁ*äk™ãzB/Pî]"T•ú¢CìÖ®År2½‰Hùz ¡)ïŞ‹\¹IÜxEç~¡aB¢rí±¯ØºÄ•2¤¶KÀMûÔàmÎWá‰=9#µhc)n$r’Iálç`jÄqaÁe_#î“§OQ-?Uò?!+ò%.óYñ1Õñ%s.zò[´AÄ@‚0Ä@‚@Ã Ä0„ „0Ä Â0Ã ƒ@‚0Â ƒ Ã0Ã0„0Ä0Ã Â0„@‚0ƒ0‚ Ä „@ƒ Ä@Ã Â Ã@„@Â ‚0„0Ä0Ã0ƒ ‚ ‚ Ä@Ã Â Ã@‚@Ã Ä0Ã@Â@‚@Ä „0Â0Â0„0‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚ ‚0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ°(Å£ƒµNDRÕ‘$GchWó öHEaƒñ‰ÓPƒ†EÍã@*ˆBtµm„E0MbLQ1¤‘În$=6POÃ¥,‡±(Û&‚ÖÕÀAJñJG‡Î!N‡E\]—%±“’¿ò1¿Ôñ;ÿÒğëğ71¿Ñ £?Ò2ìğOS²7‚2Sq#OBñg%¬ò#Ñò1úñ#ÿ"ÒÂ*©‘¿”ñkÿÕá$1%ASñ+£!½Rÿ§5¬¬Ò6¯±XÃÀ„œafx]Ë¡ª8£‘ÈDí¶(MÈ„šsA$…î#$L Y	Q"F0
+ÃIWÅ(ÅDHÉ…!£*Hà± ˆ!)ìp@’€ZôQBè’<Á4Ì34ª0\0)•1 [Á<´yÂ¥0 !`¥´d‹1dT„Q,´ ßá4³PòlZs7EÂ†c…`†`D`D@†PF`†@…PF`F@†@F`…@DP„PFPD@„@EPD@„@EPE@D@E`†`FPD`DPF@†P„`EPD@†`E@E`†`E@F@„`DPE@„P…`F°9-²xOØi(£'¸©uä2Rl}ò#%¿Ôb#ÿÑ[ñÿQòèR+?+Rò/)ÿã-¥òÿÿá#¿ò1Ùğ_ÿñ+¿Ğ0"^+á^ñ%oñÿP/ÿOò)dñ?!¿–‘ï"ó_?Ğ@¦òC~2#çñ/ÿUñ)¿“1ü¿bkòğòg‚¿ñ/ĞQ)cñ?ò¶bá.Sò1±ò'-)CÃ0Ä01Ä@Ã@AAÄ@Â@A1Ã Â Ã Â 1Ã0Â011Ã0Â AÂ@A1!!A1A1Ä Â AÃ0!Ã01!1Ä0Ä0Ä0Â0Â@Â@!AA1Ä Ã Ä@Ä A1Ã 1!AÄ0AÃ 1ÿÕ ?Tò1PòK-.ò3?ñ[%øbÿÏ±á¢’/šqV‘2?”ò'±Âa'‚0‚ƒ‚ Á Â0ƒ ‚‚ Â ÃÃ Â ÂÃ Ã ‚ 0ƒ0ƒÃ Á ÃÂ0ÃÁ ‚ Â0Á0 Ã0‚0‚ƒƒ ƒ ƒ Á0‚0Â Â  Ã0‚0Ã Ã0Á0   Â0‚0Á Á‚0Ã0Á 0‚ÂÃ0ƒ Á0Á ƒ0Á‚ƒ0ÃÂ ÂÂ0Á0 Â0ƒÂ0‚ Á0Ã0‚Â ƒƒÂ ƒ ƒ Á 0‚ Áƒğkiñ)ÿâ1Qñ?ñRÂ²ò2Rğ¿Ñ‚¿ó1¿ñ¿³=±&=ñ.ñ!zòÕğ+0q%sÁÿÑ"¿Õ²¿UâP2%ôñOóOİÀÌ<AEQDQEA11CQDQQCQAADADQQDQ1D11EQQCQE1QCQQE11QDQD1EQ1A1EQDAADQ1EACQCADA11AAQEAACA1CADAE11AA1Añ+%¿Ò!?ñüñ#àğg!Óğ!¿S’?Ô 7óK¿#.éòóCæq%!ƒò4	AI-¡Ã[Qa‹A%Ùô¦5àº9ÔeC3Li $D5Ä¦š×\ƒaBFÀy SaÔ¤-¡á/2dÜ2$	‚(’ò‡°lLJ$'Çƒ9BqyŠU ŒÒE#PØÓºĞˆÅÿ¢?“b.¿Pñÿ(sóg)â'˜Ñ%¿Ö‘!ÿ!Â Â Â Â Â Â Â Â Â Â Â Â Â Â Â Â Â Â Â ¡£)¨Ô°¢ş±©ê]åÎ ÑzMa^ªzNG¶¤İ4±êºP»}›XÎ1réLDáı”¦+­İŞœ¨u’	y©îFiŠ}ZXµÚµ!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!QÿĞà-?áğK¶R!ìò'ãóğ1U1;`hQ¿Õ±9S-1£éà#ñ?ÿ-ÿOñ"´1'.ó!¿Ñğ_?Sòc')sá?Sÿó-aòg1bBÁ/+R.¦RñcÓò/ÿñ'á±½23éá-0óc1¥ñ[ñS!?•‚³ñz#¦.ç.?Õ¡/ßA'!p¿ñ¼ñWó'1â°+-â”òyò-¿Vâ+9‘.¬‘`ò%SÜ1$ñc)?Öò-ğò?ñ+¡Baa*¿°Òò_!¿ÂõğÓ"˜q3¿%Q13uñğÿÖò_¿’‘ó7%êñ?!6ò'3Àÿò;-_rÿÕ‘ ‘%5³1ÿÒòg³ò-¿ñ%+ñ)]òu!)?Qò+?‘ ò?’Á"›&¿ÖÑ`n&ÿñgşò3ó1?–ñC&ğ-ÿÓÀ3+ÿ%Şòÿ â)¿s?ğ3)?!¿Öñ[%•wñÿ¦q¿ÓñC§R"±?Q?‘ñ%ÿS‘İ’óùÀ#c²'/3è¡ÿSÂ&;Q6‘) óù€%pñGĞ+–*ZQ¼Äƒå%i0JÆñ‹¢Ÿ&Ï¬ÁO¾qp·Ğ•á¿rêğS1ğÀ*¿Ö@ë1ŠÓ˜,[”-(ÊÙøŠ¢ÌäpsYF·$L$iV¨”0I¬2kVİ¡ğ;…Å8EgY)ïÎîĞj’‡Y¥…¨be\LZ%ZŠê6UÍŒîğò+1éÀ¿‘-¿Ñ’.ò7¢ÿ’ñ?1Tò;œÁ¿Õ¢?*¿ğc&#+?U¡øñfÎñvƒä„ÄG}ç%ŞÖ‚	K}Y@áĞTÍæ1Z%KI>±BDÛØ•*š©>åU2­ª‚AŠûİ Íİr•F¢Øeİ¹
+|D"Ì  Ùa'ÛÊ#¨¦uÕÔ+­^ÙfÒx"ÌAL¼ÔX†››¦>˜ûÿÔqÓ`!ÿ*2=.»‘¿ÔÒVò)ğğcÒòg)?Ò²¥ñ,$B-ñ/_¡/a%+ğ[ã¹".äğG-&3C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0¿¡şa¶ñ/OB¿ñG!Or?Ô¢zò1®WGI£‘yJ+’ t²Ê)–(©\e4­M]Äi0$Î^¥)‚J¦R%“n.Ì}Å,ù,OıŠ^QV¹Á¤á¤„µS¸‚ˆÁf×ÑH]œ„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@„@”ñ/%“òKå tÑ/Q%?òk6ó#ñZá3âğÿ,ÿ!ÿóWû#¿Âzñ7ŞÂ#™ñ[äñW¿SÔ1š"21'bÖò% ªğ-´©a6¦Y:b0¹6ŞU=lÄÃ%½=Ä3>ì·Şº•Z¼Æ^FóáÖ	RÄV“<mH6È£n¸Z‘£È•f++æèWò‡i®_3ÔQ—¡´ğ™ìN°è}L‚zD‘°ÌÌ:Ãt13&Ë¡mÁ"iE'VÄÃ*Fã$ˆBTMµ0¥pÛò™3@…eC6QsH†ÅTQ=bEØ²ÇqÉ£X\!päXÓ
+tÑ¡<O`Ò²xŠD)#%á$Èô\ÇC‰—T’Ô†@m"!+£ ‘ÜÂd}Rw–BÄ@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä@Ä&«±ş­g—Û~\¶¸ïXA²WBã9,i’ˆ&ÚD]@N[`ˆæmØ]‚ÇH´‡wDn.=p	EÙ:(-şœêeuB?Òb™ñCáA(3"ñc!+ñ#!ÖB2?Õ@-2Ÿ‘*Oñ?¿Ôñ'â3zò%¨b&¿SÒ*Uò71õÀ·3ÿ”’/dòW7Ò+Óòg¿S.CA!BA1!11BA!AD!C!C1D1ABAAD1!B1AC11B1!DAC!1!11D!1AAB1!BAAB1!B1!D!CAA1D!1ACAAB!C1D!CACAAD!!A1!DAB1BADAC1!B1!A1D!A!C!B!1D!BA1B1DABAA1AC1D1!1C1D!!B1AA!Cˆ·ı*œÑ¬–(ÕªäD2$HbRa”zÂÖ«X)Õà™´r§›IrA¥YòÙ}²4qà—mĞAİ¼R­?m‘_ü}ì"’•&R‘F…ÕlÄpÍÇÍ—ÚırW×ªG„ÚQ"ì¢ò%Bi£NDÜT•0>ò—ûRtñô äu¬÷>Üe¸/S[ÌL[šŞ³,áW¶†ƒÀc*…°İéQŠ^<‹4¢!‡Ô²"C  B0C0Cƒ ƒ C0AA0ƒ ƒ C‚0B0‚0B‚C0‚C0‚ ƒB0ƒ0‚B ‚CACA0‚0C AA A ƒ0ƒA0‚P-¿Óğ[)íñ?Ò‘ÿó,_B1¿ 2?Ó¶"ÇDØÄ`*ÎñÄÓ¶Ï£8<¦£éÛÂïk–.waC¼qi‰Ç“æDÃÆÓ„%_#–ëšœNbå+B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B B BPDQEQDAQAAQDAFQAQEAFaaQEQFAFaEaEaFaFaDaEAaQFaFAQEQAAAaADaaDaaEaaADaaDQADQQaDAFaÀÕˆ•gÅÌ§ÆXc®Äf¡W;¦<•Ö“3¥dºê×´b˜Ÿú›s¤§yjÊmÂ¤HŠe©ˆ6i¡Â·§SÒj³[Ìugy¾Ul¼”Cr£‹ĞÀ_¤üE¯DÄ§xÌßDƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0ƒ0¤È¨ñ°CN1¼’éjÊ!!‚A!B!‚‚‚!!AA!!!AB!BB!A‚‚B‚‚!!BA!B‚A!BA!‚!‚A‚!B!A!B!A‚!AA!B!!‚!A‚BA‚A‚!!‚!!A

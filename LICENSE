@@ -1,0 +1,109 @@
+GRAPE OPEN SOURCE LICENSE
+Version 1.0
+
+Copyright (c) 2026 the Grape authors and contributors.
+
+Original Source: https://github.com/okhx/grapebot
+
+This license tells you exactly what you are allowed to do with this software,
+and the one condition you must meet if you share it with anyone.
+
+--------------------------------------------------------------------------------
+1. DEFINITIONS
+--------------------------------------------------------------------------------
+
+"Software" means the source code, assets, documentation and any other files in
+this repository, except third-party components listed in the LICENSES folder.
+
+"You" means any person or organization exercising rights under this license.
+
+"Original Source" means the repository URL written above. It must stay the
+canonical, public location of this project.
+
+"Distribution" means publishing, releasing, uploading, sharing or otherwise
+making the Software or a build of it available to anyone else.
+
+--------------------------------------------------------------------------------
+2. WHAT YOU MAY DO
+--------------------------------------------------------------------------------
+
+You are granted a worldwide, royalty-free, non-exclusive permission to:
+
+  a) use the Software for any purpose, including commercial use;
+  b) copy and redistribute the Software;
+  c) modify the Software and create derivative works;
+  d) distribute compiled builds of the Software or of your derivative works.
+
+You do not need to ask for permission and you do not owe any payment.
+
+--------------------------------------------------------------------------------
+3. THE ONE CONDITION: PIN THE SOURCE LINK
+--------------------------------------------------------------------------------
+
+If you distribute the Software, a modified version, or a compiled build of it,
+you must include and keep visible a link to the Original Source.
+
+"Pinned" means the link must be:
+
+  a) written out in full, pointing at the Original Source, with no URL
+     shortener, redirect or intermediary;
+  b) permanently placed where users of your distribution can see it;
+  c) present in every place your project is published, for example the mod
+     page, repository README, release notes, in-game or in-app about screen,
+     or the description of your download.
+
+The link must remain pinned for as long as your distribution is available.
+Removing it, hiding it, or replacing it with a link to your own fork violates
+this license.
+
+The minimum acceptable attribution is the following line, kept intact:
+
+  Based on Grape - https://github.com/okhx/grapebot
+
+--------------------------------------------------------------------------------
+4. OTHER REQUIREMENTS
+--------------------------------------------------------------------------------
+
+  a) Keep this license file, the copyright notice and the Original Source link
+     in all copies of the source code.
+  b) If you distribute a compiled build, you must also make the corresponding
+     source code available, either by shipping it or by linking to it. The link
+     to the Original Source must be included either way.
+  c) Modified versions must carry a clear note describing what you changed, and
+     must remain under this same license.
+  d) You may not remove or alter the attribution of the original authors.
+
+--------------------------------------------------------------------------------
+5. THIRD-PARTY COMPONENTS
+--------------------------------------------------------------------------------
+
+Third-party libraries, fonts and headers keep their own licenses, listed in the
+LICENSES folder. This license does not change, replace or override them. If a
+third-party license conflicts with this one for that component, the third-party
+license wins for that component only.
+
+--------------------------------------------------------------------------------
+6. TERMINATION
+--------------------------------------------------------------------------------
+
+Your rights under this license end automatically if you violate any condition
+in sections 3 or 4. If you cure the violation and restore the pinned link and
+attribution within 30 days of being notified, your rights are reinstated.
+
+--------------------------------------------------------------------------------
+7. NO WARRANTY
+--------------------------------------------------------------------------------
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+--------------------------------------------------------------------------------
+8. ACCEPTANCE
+--------------------------------------------------------------------------------
+
+By using, copying, modifying or distributing the Software you accept the terms
+of this license. If you do not accept them, do not use the Software.

@@ -1,0 +1,321 @@
+Grape Lua API
+=============
+
+Scripts are Lua 5.4 and live in the Grape/scripts folder. Open Settings → Open Grape Folder, drop a .lua file in scripts, then load it from the Scripts tab.
+
+Lifecycle
+---------
+
+```lua
+function on_load() end
+function on_update(dt) end
+function on_input(player, button, pressed) end
+function on_notification(title, body, id) end
+function on_draw() end
+function on_overlay() end
+function on_unload() end
+```
+
+All callbacks are optional. on_update runs once per rendered game frame. on_input runs on every click/release before the game handles it; player is 1 or 2 and button is jump (1), left (2), or right (3). on_notification runs once for every notification raised anywhere — by this script, by another one, by Grape itself, or pushed from the server — which is what makes it useful for reacting to an announcement rather than only for confirming your own. on_draw renders inside the Scripts tab. on_overlay renders over the level and shaders but under the Grape menu. An error or instruction-limit violation stops that script and shows the error in the menu.
+
+Game API
+--------
+
+```lua
+grape.log(message)
+grape.notify(title[, body][, options]) -> id
+grape.frame() -> integer
+grape.in_level() -> boolean
+grape.tps([value]) -> number
+grape.speed([value]) -> number
+grape.input(player, button, pressed)
+grape.player_get(player, field) -> value
+grape.player_set(player, field, value)
+grape.trajectory(player, action, delay, frames) -> prediction
+```
+
+player is 1 or 2. button is 1 (jump), 2 (left), or 3 (right). Supported readable player fields: x, y, rotation, y_velocity, x_velocity, gravity, scale, opacity, visible, dead, holding, upside_down, going_left, cube, ship, ufo, ball, wave, robot, spider, swing and platformer. Writable fields: x, y, rotation, y_velocity, x_velocity, gravity, scale, opacity and visible.
+
+Notifications
+-------------
+
+```lua
+grape.notify(title[, body][, options]) -> id
+grape.notify.show(title[, body][, options]) -> id
+grape.notify.update(id[, title][, body]) -> boolean
+grape.notify.color(id, r, g, b[, a]) -> boolean
+grape.notify.dismiss(id) -> boolean
+grape.notify.clear()
+```
+
+Raises the toast that slides in from the bottom-right of the screen, in the menu's own surface, border and corner radius, with a coloured rule down its left edge. options is { color = {r,g,b[,a]}, seconds = n }; colours are 0-1 and seconds is 2-600. Leave color out and the rule takes the player's own menu accent, which is usually what you want — a notification is rarely important enough to override someone's theme. An alpha of zero means the same thing, so you can hand a toast back to the accent after setting a colour.
+
+The id is what makes the rest of the table useful: update and color edit a toast that is already on screen instead of raising a second one, which is how a progress or status toast is built. Four toasts are shown at once and older ones slide out early rather than queueing. grape.notify stays callable as a plain function, so scripts written against the old single-argument form keep working.
+
+```lua
+local toast
+
+function on_draw()
+  if grape.ui.button("Start") then
+    toast = grape.notify("Converting", "Starting…", { seconds = 60 })
+  end
+end
+
+function on_update(dt)
+  if toast and working then
+    grape.notify.update(toast, nil, math.floor(percent) .. "% done")
+    grape.notify.color(toast, 1 - percent / 100, percent / 100, 0.2, 1)
+  end
+end
+
+function on_notification(title, body, id)
+  grape.log("saw #" .. id .. ": " .. title)
+end
+```
+
+Audio
+-----
+
+```lua
+grape.audio.play(file[, options]) -> handle | nil
+grape.audio.play_sfx(name[, options]) -> handle | nil
+grape.audio.stop(handle) -> boolean
+grape.audio.stop_all()
+grape.audio.volume(handle[, value]) -> number
+grape.audio.pitch(handle[, value]) -> number
+grape.audio.position(handle[, seconds]) -> number
+grape.audio.length(handle) -> number
+grape.audio.paused(handle[, value]) -> boolean
+grape.audio.playing(handle) -> boolean
+```
+
+play reads .mp3, .ogg, .wav and .flac from the scripts/sounds folder; play_sfx plays one of Geometry Dash's own effects by file name, resolved through the game's own search paths so a texture pack that replaces a sound is honoured. Both take plain file names — no folders, no .., no drive letters — and return a handle, or nil when the file is not there.
+
+options is { volume = 0..1, pitch = 0.01..10, start = seconds, loop = false }. Everything is applied before the first sample is heard, so a sound meant to be quiet does not crack at full volume first. Files over a megabyte are streamed rather than decoded into memory; that choice is made from the size rather than asked of the script.
+
+A script may have 32 sounds going at once. Finished sounds are released for you, a script can only touch handles it started, and unloading or reloading a script stops everything it was playing.
+
+```lua
+local music
+
+function on_draw()
+  if grape.ui.button("Play") then
+    music = grape.audio.play("track.mp3", { volume = 0.5, loop = true })
+  end
+  if music and grape.audio.playing(music) then
+    grape.ui.text(string.format("%.1fs / %.1fs",
+      grape.audio.position(music), grape.audio.length(music)))
+  end
+end
+```
+
+3D models
+---------
+
+```lua
+grape.model.draw(file, options)
+grape.model.info(file) -> table | nil, error
+grape.model.unload(file) -> boolean
+
+-- info = { triangles, vertices, unit, min, max, clipped,
+--          materials, parts, images, textures,
+--          has_colors, has_uvs, base_color }
+```
+
+Loads a .glb or .gltf from the scripts/models folder and draws it into the level from on_overlay. Triangle geometry and the colour on it are read: the scene graph and its node transforms, positions, normals, vertex colours, texture coordinates, base-colour factors and base-colour textures, and indices in any width. The rest of the PBR model — metallic-roughness, normal, occlusion and emissive maps — along with skins, morph targets, animation and the compression extensions, is not: the draw is a flat-shaded triangle list with no lighting model to feed those into. Buffers and images may be packed into the container, inline as base64, or beside the model on disk.
+
+options is { x, y, size, rotation = {rx,ry,rz}, color = {r,g,b,a}, textured, distance, wireframe, shade, cull, light = {x,y,z}, width }. x and y are the level coordinates the model is anchored at and size is how many level units its longest axis spans — every model is normalised into a unit cube when it loads, so size means the same thing whatever units it was exported in. rotation is radians. distance is the camera distance in model widths; 0 gives an orthographic projection.
+
+textured is on by default and draws the model in its own colours: base-colour factors, vertex colours and base-colour textures, multiplied together the way glTF defines them, with color acting as a tint over the top — so white leaves a model exactly as it was exported. Turn textured off to get a flat model in color alone, which is what a silhouette or a marker wants. Materials in MASK mode are cut out rather than drawn transparent, so cut-out foliage and decals read correctly instead of as grey rectangles.
+
+Colours come out of the file in the space it stores them in: glTF states base-colour factors and vertex colours as linear, and they are converted to sRGB once when the model loads. That conversion is not a nicety — an ordinary dark material handed over as linear arrives looking black. Textures are left alone, since a PNG is already sRGB. A material whose texture has no coordinates to map it onto falls back to its base colour rather than sampling one texel over the whole model.
+
+info reports what the file actually turned out to contain — materials, parts, images, how many resolved to a texture, whether it has vertex colours and texture coordinates, and the first material's base colour. A model that draws in the wrong colour is nearly always one carrying less than it looks like it should, and that is the line that says which.
+
+Models are projected onto the level's own coordinates and then through world_to_screen, which is what makes one behave like part of the level rather than a sticker on the window: it moves, scales and rotates with the camera, and a model anchored to an object stays on it through a zoom trigger. Triangles are drawn furthest-first, because a draw list has no depth buffer. Up to 8000 triangles are drawn per call; info reports clipped = true when a model is larger than that.
+
+```lua
+function on_overlay()
+  if not grape.in_level() then return end
+  local x = grape.player_get(1, "x")
+  local y = grape.player_get(1, "y")
+  grape.model.draw("ship.glb", {
+    x = x, y = y + 120, size = 70,
+    rotation = { 0.5, grape.frame() / 240, 0 },
+    color = { 0.62, 0.36, 0.88, 0.92 },
+  })
+end
+```
+
+Trajectory probes
+-----------------
+
+```lua
+local p = grape.trajectory(1, "click", 3, 90)
+-- p = { x, y, frames, min_y, max_y, survived }
+```
+
+trajectory simulates the selected player for frames physics ticks and flips jump input after delay ticks. action is click or release, 0 <= delay < frames <= 600. survived is true when the player reaches the full horizon. Call probes from on_update and cache their result for drawing; each call runs real Grape trajectory physics.
+
+Use Grape menu controls
+-----------------------
+
+```lua
+grape.menu.list() -> { tags... }
+grape.menu.register(name, default) -> tag
+grape.menu.get(tag) -> boolean | number | string
+grape.menu.set(tag, value)
+grape.menu.toggle(tag) -> boolean
+grape.menu.press(tag)
+grape.menu.mode(["stopped" | "recording" | "playing"]) -> string
+```
+
+register publishes a boolean of your own into the same registry, under script.<script name>.<name>, and returns the tag. That tag is the point: a control in the registry can be bound to a key, which is the only way to turn something in a script on and off without opening the menu — and opening the menu mid-attempt is exactly what you cannot do. Re-registering the same name after a reload finds the existing control again, keeping its key binding and its value.
+
+This is the same shared control registry used by Grape's menu and keybinds, not a copied Lua settings list. list returns every available tag in the current build. get/set works with every registered boolean, number, and string control; set runs the control's normal change handler. toggle changes a checkbox. press activates one-shot boolean controls such as updater.advance_one or updater.advance_back. mode reads or changes the recorder/playback buttons.
+
+```lua
+for _, tag in ipairs(grape.menu.list()) do grape.log(tag) end
+grape.menu.set("updater.tps", 360)
+grape.menu.toggle("hitboxes.enabled")
+grape.menu.press("updater.advance_one")
+grape.menu.mode("recording")
+```
+
+Script-tab UI
+-------------
+
+```lua
+grape.ui.text(text)
+grape.ui.button(label) -> boolean
+grape.ui.checkbox(label, value) -> boolean
+grape.ui.slider(label, value, min, max) -> number
+grape.ui.input(label, value) -> number
+grape.ui.same_line()
+grape.ui.separator()
+grape.ui.image(file, width, height)
+grape.ui.corner_image(file, corner, width, height, padding)
+```
+
+Images are relative to the scripts folder. Put shared files in scripts/resources. PNG, JPEG and animated GIF are decoded once and cached. corner is top_left, top_right, bottom_left or bottom_right; corner_image must be called from on_overlay. Keep labels unique by adding ##id when two controls show the same text.
+
+Level drawing
+-------------
+
+```lua
+grape.level.world_to_screen(x, y) -> screen_x, screen_y, visible, scale
+grape.level.screen_to_world(screen_x, screen_y) -> x, y
+grape.level.to_screen({x1,y1,...}) -> {sx1,sy1,...}
+grape.level.camera() -> { x, y, width, height, zoom, rotation }
+grape.level.line(x1, y1, x2, y2, r, g, b[, a, width])
+grape.level.polyline({x1,y1,x2,y2,...}, r,g,b[,a,closed,width])
+grape.level.polygon({x1,y1,x2,y2,...}, r,g,b[,a,filled,width])
+grape.level.rect(x1,y1,x2,y2,r,g,b[,a,filled,width])
+grape.level.circle(x,y,radius,r,g,b[,a,filled,width,segments])
+grape.level.text(x,y,text,size,r,g,b[,a,centered])
+grape.level.image(file,x,y,width,height[,alpha])
+```
+
+world_to_screen also returns scale: how many screen pixels one level unit is worth at that point, which is what lets a script drawing in screen space size things to the level instead of being wrong the moment the camera zooms. screen_to_world is its inverse, through the same transform. to_screen converts a whole shape in one call, which matters because converting a hundred points one at a time costs a hundred Lua calls a frame. camera reports the visible region in level units and is derived from the same transform, so it stays right through zoom triggers, camera rotation and static-camera sections. These four are queries rather than drawing, so unlike the rest of this table they can be called from on_update as well as on_overlay.
+
+All coordinates, sizes, and widths are level/world units and follow the complete camera transform. Colors and alpha are 0-1. Call drawing functions from on_overlay. Polygons are convex; combine multiple polygons for concave shapes. Images support PNG, JPEG, and animated GIF files relative to the script. These primitives can compose arbitrary level overlays rather than only circles.
+
+```lua
+function on_overlay()
+  if not grape.in_level() then return end
+  grape.level.line(100, 100, 220, 160, 1, 0.3, 0.2, 1, 2)
+  grape.level.polygon({240,100, 290,170, 340,100}, 0.3,0.8,1,0.7,true)
+  grape.level.rect(360,100,430,160, 1,1,0,1,false,2)
+  grape.level.circle(480,130,30, 0.7,0.2,1,0.8,false,3)
+  grape.level.text(540,130,"Lua",18, 1,1,1,1,true)
+  grape.level.image("resources/marker.png",600,100,64,64,0.9)
+end
+```
+
+Reading the loaded macro
+------------------------
+
+```lua
+grape.macro.length() -> integer
+grape.macro.position() -> integer
+grape.macro.tps([frame]) -> number
+grape.macro.platformer() -> boolean
+grape.macro.seed() -> number
+grape.macro.name() -> string
+grape.macro.event(index) -> table | nil
+```
+
+The recording itself, which nothing else in the API exposes. event is one-based and returns { frame, type, holding, player2, swift }, plus tps on a rate switch. type is jump, left, right, restart, restart_full, death, tps or bugpoint. tps() with no argument is the rate the macro starts at; with a frame it is the rate in effect there, after any switches recorded before it. position is how far playback has advanced.
+
+Read-only on purpose. Handing a script a mutable event list means one bad index can corrupt a recording; editing stays in the macro editor, which keeps the list sorted.
+
+```lua
+function on_draw()
+  local total = grape.macro.length()
+  grape.ui.text(grape.macro.name() .. ": " .. total .. " inputs")
+  grape.ui.text("At " .. grape.macro.tps() .. " TPS" ..
+    (grape.macro.platformer() and ", platformer" or ""))
+
+  local switches = 0
+  for i = 1, total do
+    if grape.macro.event(i).type == "tps" then switches = switches + 1 end
+  end
+  grape.ui.text(switches .. " rate switches")
+end
+```
+
+Persistent settings
+-------------------
+
+```lua
+grape.storage.get(key, default) -> value
+grape.storage.set(key, value)
+```
+
+Boolean, number and string settings are saved per script in scripts/settings. Writes are grouped briefly while a slider is moving and restored on the next load.
+
+Frame-window circle example
+---------------------------
+
+```lua
+local marker = nil
+local color = { 0.2, 1.0, 0.25 }
+local tested_delays = 10
+local horizon = 90
+
+function on_update(dt)
+  marker = nil
+  if not grape.in_level() or grape.player_get(1, "dead") then return end
+
+  local action = grape.player_get(1, "holding") and "release" or "click"
+  local available = 0
+  for delay = 0, tested_delays - 1 do
+    if grape.trajectory(1, action, delay, horizon).survived then
+      available = available + 1
+    end
+  end
+  marker = {
+    x = grape.player_get(1, "x"),
+    y = grape.player_get(1, "y") + 35,
+    available = available
+  }
+end
+
+function on_draw()
+  color[1] = grape.ui.slider("Circle red", color[1], 0, 1)
+  color[2] = grape.ui.slider("Circle green", color[2], 0, 1)
+  color[3] = grape.ui.slider("Circle blue", color[3], 0, 1)
+end
+
+function on_overlay()
+  if not marker then return end
+  local strength = marker.available / tested_delays
+  grape.level.circle(marker.x, marker.y, 5 + marker.available,
+    color[1] * (1 - strength), color[2] * strength, color[3], 0.85)
+end
+```
+
+Security and limits
+-------------------
+
+Scripts run on the game thread with an instruction budget. File, operating-system, package-loading and debug libraries are disabled. A script can still change gameplay state and crash a level through invalid values, so only load scripts you trust. JavaScript is not a second runtime: one Lua API keeps bindings, lifecycle behavior and security rules consistent.

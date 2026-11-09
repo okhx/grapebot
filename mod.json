@@ -1,0 +1,61 @@
+{
+  "geode": "6.0.0-alpha.1",
+  "gd": {
+    "win": "2.2091",
+    "android": "2.2091",
+    "mac": "2.2091",
+    "ios": "2.2091"
+  },
+  "id": "okhx.grape",
+  "name": "Grape",
+  "version": "v1.0.1",
+  "developer": "okhx",
+  "description": "A Geometry Dash bot.",
+  "links": {
+    "source": "https://github.com/okhx/grapebot"
+  },
+  "resources": {
+    "files": [
+      "LICENSE",
+      "NOTICE",
+      "LICENSES/Arc-MIT.txt",
+      "LICENSES/DEPENDENCIES.md",
+      "LICENSES/Dear-ImGui-MIT.txt",
+      "LICENSES/Dobby-Apache-2.0.txt",
+      "LICENSES/Geode-BSL-1.0.txt",
+      "LICENSES/Geode-JSON-BSL-1.0.txt",
+      "LICENSES/Geode-Result-BSL-1.0.txt",
+      "LICENSES/Glaze-MIT.txt",
+      "LICENSES/FONTS.md",
+      "LICENSES/Font-Awesome-Free-LICENSE.txt",
+      "LICENSES/Inter-OFL-1.1.txt",
+      "LICENSES/Lua-MIT.txt",
+      "LICENSES/QSox-MIT.txt",
+      "LICENSES/SafetyHook-BSD-2-Clause.txt",
+      "LICENSES/stb-LICENSE.txt",
+      "LICENSES/TulipHook-BSL-1.0.txt",
+      "LICENSES/Zycore-MIT.txt",
+      "LICENSES/Zydis-MIT.txt",
+      "LICENSES/fmt-MIT.txt",
+      "LICENSES/nontype-functional-BSD-2-Clause.txt",
+      "resources/fonts/font_main.ttf",
+      "resources/fonts/font_bold.ttf",
+      "resources/fonts/font_medium.ttf",
+      "resources/fonts/font_symbols.ttf",
+      "resources/img/logo.png"
+    ],
+    "sprites": [
+      "resources/grape.png"
+    ]
+  },
+  "dependencies": {
+    "eclipse.ffmpeg-api": {
+      "version": ">=2.0.0",
+      "required": false,
+      "platforms": [
+        "android"
+      ]
+    },
+    "geode.node-ids": ">=1.23.3"
+  }
+}
